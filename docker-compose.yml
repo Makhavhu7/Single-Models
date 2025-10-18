@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  image-app:
+    image: dorfnew/my-ai-app-image:latest
+    ports:
+      - "8000:8000"
+  video-app:
+    image: dorfnew/my-ai-app-video:latest
+    ports:
+      - "8001:8000"
+  audio-app:
+    image: dorfnew/my-ai-app-audio:latest
+    ports:
+      - "8002:8000"

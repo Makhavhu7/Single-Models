@@ -1,0 +1,39 @@
+FROM ubuntu:22.04
+
+# ✅ APT SOURCES + BASE
+COPY sources.list /etc/apt/sources.list
+RUN echo 'tzdata tzdata/Areas select Etc' | debconf-set-selections && \
+    echo 'tzdata tzdata/Zones/Etc select UTC' | debconf-set-selections && \
+    DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-pip git libsndfile1 ffmpeg build-essential rustc cargo && \
+    rm -rf /var/lib/apt/lists/*
+
+# ✅ PyTorch CPU (shared)
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install --no-cache-dir \
+    torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.2+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+WORKDIR /app
+
+# ✅ ALL DEPENDENCIES (1 command!)
+COPY requirements.unified.txt .
+RUN python3 -m pip install --no-cache-dir -r requirements.unified.txt
+
+# ✅ APP FILES
+COPY app/ app/
+COPY main.unified.py main.py
+RUN mkdir -p /app/model_cache && chmod 777 /app/model_cache
+
+# ✅ CLEANUP (save 300MB!)
+RUN apt-get purge -y build-essential rustc cargo && apt-get autoremove -y
+
+# ✅ ENV (20GB cache)
+ENV PYTHONUNBUFFERED=1 \
+    HUGGINGFACE_HUB_CACHE=/app/model_cache \
+    TRANSFORMERS_CACHE=/app/model_cache \
+    MODELSCOPE_CACHE=/app/model_cache
+
+USER appuser
+CMD ["python3", "-u", "main.py"]
