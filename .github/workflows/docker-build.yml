@@ -1,10 +1,7 @@
-name: Docker Build and Push
-
+name: Unified Docker Build
 on:
   push:
-    branches:
-      - main
-
+    branches: [main]
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,6 +13,7 @@ jobs:
         run: |
           ls -la
           [ -f sources.list ] || { echo "sources.list missing"; exit 1; }
+          [ -f Dockerfile.unified ] || { echo "Dockerfile.unified missing"; exit 1; }
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -26,29 +24,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Image Docker
+      - name: Build and push Unified Docker
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.image
+          file: Dockerfile.unified
           platforms: linux/amd64
           push: true
-          tags: dorfnew/my-ai-app-image:latest
-
-      - name: Build and push Video Docker
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.video
-          platforms: linux/amd64
-          push: true
-          tags: dorfnew/my-ai-app-video:latest
-
-      - name: Build and push Audio Docker
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.audio
-          platforms: linux/amd64
-          push: true
-          tags: dorfnew/my-ai-app-audio:latest
+          tags: dorfnew/unified-ai-suite:latest
