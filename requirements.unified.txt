@@ -1,25 +1,24 @@
+# 🎯 CORE + SHARED
 fastapi==0.104.1
 uvicorn==0.24.0
-pydantic
+torch==2.0.1+cpu
+torchvision==0.15.2+cpu
 numpy<2.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
-scipy==1.10.1
-soundfile==0.12.1
-librosa==0.10.1
 
-# diffusers + transformers + accelerate
+# 🖼️ IMAGE
 diffusers==0.27.2
 transformers==4.44.0
+huggingface_hub==0.24.7
 accelerate==0.33.0
 safetensors==0.4.5
-huggingface_hub==0.24.7
 
-# modelscope
+# 🎬 VIDEO  
 modelscope==1.11.0
 
-# bark
+# 🔊 AUDIO
+scipy==1.10.1
+librosa==0.10.1
+soundfile==0.12.1
 git+https://github.com/suno-ai/bark.git
-
-# torch (GPU) - installed in Dockerfile via official index to match CUDA
-# the Dockerfile will install torch with the correct CUDA wheels
