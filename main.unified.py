@@ -20,24 +20,84 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins for testing; restrict in production
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# 🌟 GLOBAL MODELS (lazy load)
+# 🌟 GLOBAL MODELS and PRE-GENERATED CONTENT
 models = {"image": None, "video": None}
+pre_generated = {"image_b64": None, "video_frame_b64": None, "audio_b64": None}
 device = "cpu"
+
+@app.on_event("startup")
+async def startup_event():
+    """Auto-generate samples on startup"""
+    # Load image model and generate sample
+    models["image"] = DiffusionPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-3.5-large",
+        torch_dtype=torch.float32
+    ).to(device)
+    print("✅ Image model loaded")
+    image = models["image"]("a sample landscape", num_inference_steps=10, width=256, height=256).images[0]
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    pre_generated["image_b64"] = base64.b64encode(buffered.getvalue()).decode()
+    print("✅ Sample image generated")
+
+    # Load video model and generate sample frame
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            print(f"🚀 Loading video model attempt {attempt + 1}")
+            models["video"] = pipeline(
+                "text-to-video-synthesis",
+                model="Wan-AI/Wan2.2-TI2V-5B",
+                model_revision="bf16",
+                cache_dir="/app/model_cache"
+            )
+            print("✅ Video model loaded!")
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Video model failed: {e}")
+            time.sleep(5)
+    if models["video"]:
+        output = models["video"]({"text": "a sample animation", "num_inference_steps": 10})
+        frame = output["videos"][0][0]
+        ret, buffer = cv2.imencode('.png', frame)
+        pre_generated["video_frame_b64"] = base64.b64encode(buffer).decode()
+        print("✅ Sample video frame generated")
+
+    # Load audio models and generate sample
+    preload_models()
+    print("✅ Audio models preloaded")
+    audio_array = generate_audio("This is a sample audio message.")
+    buffer = io.BytesIO()
+    write_wav(buffer, SAMPLE_RATE, audio_array)
+    pre_generated["audio_b64"] = base64.b64encode(buffer.getvalue()).decode()
+    print("✅ Sample audio generated")
 
 # Add root route
 @app.get("/")
 async def root():
-    return {"message": "Welcome to Unified AI Suite. Use /health or /generate endpoints."}
+    return {"message": "Welcome to Unified AI Suite. Use /health or /auto-generate to see pre-generated content, or /generate endpoints."}
+
+@app.get("/auto-generate")
+async def auto_generate():
+    if not all(pre_generated.values()):
+        return {"error": "Pre-generated content not ready. Check logs."}
+    return {
+        "image_b64": pre_generated["image_b64"],
+        "video_frame_b64": pre_generated["video_frame_b64"],
+        "audio_b64": pre_generated["audio_b64"],
+        "message": "Pre-generated samples: landscape image, animation frame, and audio message."
+    }
 
 @app.post("/generate/image")
 async def generate_image(prompt: str, steps: int = 20, width: int = 1024, height: int = 1024):
     if models["image"] is None:
         models["image"] = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-3.5-large", 
+            "stabilityai/stable-diffusion-3.5-large",
             torch_dtype=torch.float32
         ).to(device)
         print("✅ Image model loaded")
@@ -60,8 +120,8 @@ async def generate_video(prompt: str, steps: int = 25):
             try:
                 print(f"🚀 Loading video model attempt {attempt + 1}")
                 models["video"] = pipeline(
-                    "text-to-video-synthesis", 
-                    model="Wan-AI/Wan2.2-TI2V-5B", 
+                    "text-to-video-synthesis",
+                    model="Wan-AI/Wan2.2-TI2V-5B",
                     model_revision="bf16",
                     cache_dir="/app/model_cache"
                 )
