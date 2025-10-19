@@ -1,89 +1,112 @@
+# main.gpu.py -> put into container as /app/main.py (rename to main.py)
 import os
+import io
 import time
+import base64
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from diffusers import DiffusionPipeline
-from modelscope.pipelines import pipeline
-from bark import SAMPLE_RATE, generate_audio, preload_models
-from scipy.io.wavfile import write as write_wav
-import torch
-import cv2
-import io
-import base64
 from PIL import Image
+import cv2
+import torch
+from scipy.io.wavfile import write as write_wav
 
-app = FastAPI(title="🎨🎬🔊 Unified AI Suite")
+# Third-party model libs (diffusers, modelscope, bark)
+from diffusers import DiffusionPipeline
+from modelscope.pipelines import pipeline as modelscope_pipeline
+from bark import SAMPLE_RATE, generate_audio, preload_models
 
-# 🌟 GLOBAL MODELS (lazy load)
-models = {"image": None, "video": None}
-device = "cpu"
+app = FastAPI(title="Unified AI Suite (GPU)")
+
+# device selection
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print("Device:", device)
+
+# lazy loaded model handles
+models = {"image": None, "video": None, "audio_preloaded": False}
 
 @app.on_event("startup")
-async def preload_audio():
-    """Audio loads fast - preload immediately"""
+async def startup_load_audio():
+    # Preload Bark resources (fast)
     preload_models()
-    print("✅ Audio models preloaded")
+    models["audio_preloaded"] = True
+    print("✅ Audio preloaded")
 
 @app.post("/generate/image")
 async def generate_image(prompt: str, steps: int = 20, width: int = 1024, height: int = 1024):
-    if models["image"] is None:
-        models["image"] = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-3.5-large", 
-            torch_dtype=torch.float16
-        ).to(device)
-        print("✅ Image model loaded")
-    
+    """
+    GPU-ready image endpoint. Uses FP16 when on GPU.
+    """
     try:
+        if models["image"] is None:
+            dtype = torch.float16 if device == "cuda" else torch.float32
+            print("Loading image model with dtype", dtype)
+            models["image"] = DiffusionPipeline.from_pretrained(
+                "stabilityai/stable-diffusion-3.5-large",
+                torch_dtype=dtype,
+                safety_checker=None
+            ).to(device)
+            # If GPU, enable attention slicing to reduce VRAM use
+            try:
+                models["image"].enable_attention_slicing()
+            except Exception:
+                pass
+            print("✅ Image model loaded")
+
         pipe = models["image"]
-        image = pipe(prompt, num_inference_steps=steps, width=width, height=height).images[0]
-        buffered = io.BytesIO()
-        image.save(buffered, format="PNG")
-        return {"image_b64": base64.b64encode(buffered.getvalue()).decode()}
+        result = pipe(prompt, num_inference_steps=steps, width=width, height=height)
+        image = result.images[0]
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return {"image_b64": base64.b64encode(buf.getvalue()).decode()}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
 
 @app.post("/generate/video")
 async def generate_video(prompt: str, steps: int = 25):
-    if models["video"] is None:
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                print(f"🚀 Loading video model attempt {attempt + 1}")
-                models["video"] = pipeline(
-                    "text-to-video-synthesis", 
-                    model="Wan-AI/Wan2.2-TI2V-5B", 
-                    model_revision="bf16",
-                    cache_dir="/app/model_cache"
-                )
-                print("✅ Video model loaded!")
-                break
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise HTTPException(500, f"Video model failed: {e}")
-                time.sleep(5)
-    
+    """
+    Text-to-video using modelscope pipeline. Expects GPU and BF16 support.
+    Returns a single video frame (as PNG base64) for quick demo.
+    """
     try:
+        if models["video"] is None:
+            # modelscope expects a CUDA environment for large models
+            print("Loading video model (modelscope)...")
+            models["video"] = modelscope_pipeline(
+                "text-to-video-synthesis",
+                model="Wan-AI/Wan2.2-TI2V-5B",
+                model_revision="bf16",
+                cache_dir="/app/model_cache",
+                device=device  # modelscope tries to use torch device
+            )
+            print("✅ Video model loaded")
+
         output = models["video"]({"text": prompt, "num_inference_steps": steps})
-        frame = output["videos"][0][0]
-        ret, buffer = cv2.imencode('.png', frame)
-        return {"video_frame_b64": base64.b64encode(buffer).decode()}
+        # Many models return a dict with 'videos' -> list of frames arrays
+        frame = output["videos"][0][0]  # take first frame
+        ret, buf = cv2.imencode('.png', frame)
+        return {"video_frame_b64": base64.b64encode(buf.tobytes()).decode()}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(status_code=500, detail=f"Video generation failed: {e}")
 
 @app.post("/generate/audio")
-async def generate_audio(text: str):
+async def generate_audio_endpoint(text: str):
+    """
+    Bark audio generation (CPU/GPU both work). Returns WAV base64.
+    """
     try:
+        # generate_audio from bark returns numpy array int16 or float32 depending on implementation
         audio_array = generate_audio(text)
-        buffer = io.BytesIO()
-        write_wav(buffer, SAMPLE_RATE, audio_array)
-        return {"audio_b64": base64.b64encode(buffer.getvalue()).decode()}
+        buf = io.BytesIO()
+        write_wav(buf, SAMPLE_RATE, audio_array)
+        return {"audio_b64": base64.b64encode(buf.getvalue()).decode()}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(status_code=500, detail=f"Audio generation failed: {e}")
 
 @app.get("/health")
 async def health():
-    return {"status": "🚀 Unified AI Suite LIVE", "services": ["image", "video", "audio"]}
+    return {"status": "Unified AI Suite (GPU) LIVE", "device": device, "services": ["image", "video", "audio"]}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="info")
