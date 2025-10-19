@@ -1,6 +1,7 @@
 import os
 import time
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from diffusers import DiffusionPipeline
 from modelscope.pipelines import pipeline
@@ -13,6 +14,15 @@ import base64
 from PIL import Image
 
 app = FastAPI(title="🎨🎬🔊 Unified AI Suite")
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for testing; restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 # 🌟 GLOBAL MODELS (lazy load)
 models = {"image": None, "video": None}
@@ -37,7 +47,8 @@ async def generate_image(prompt: str, steps: int = 20, width: int = 1024, height
         image = pipe(prompt, num_inference_steps=steps, width=width, height=height).images[0]
         buffered = io.BytesIO()
         image.save(buffered, format="PNG")
-        return {"image_b64": base64.b64encode(buffered.getvalue()).decode()}
+        img_b64 = base64.b64encode(buffered.getvalue()).decode()
+        return {"image_b64": img_b64, "message": f"Generated image for prompt: {prompt}"}
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -65,7 +76,8 @@ async def generate_video(prompt: str, steps: int = 25):
         output = models["video"]({"text": prompt, "num_inference_steps": steps})
         frame = output["videos"][0][0]
         ret, buffer = cv2.imencode('.png', frame)
-        return {"video_frame_b64": base64.b64encode(buffer).decode()}
+        video_frame_b64 = base64.b64encode(buffer).decode()
+        return {"video_frame_b64": video_frame_b64, "message": f"Generated video frame for prompt: {prompt}"}
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -78,7 +90,8 @@ async def generate_audio(text: str):
         audio_array = generate_audio(text)
         buffer = io.BytesIO()
         write_wav(buffer, SAMPLE_RATE, audio_array)
-        return {"audio_b64": base64.b64encode(buffer.getvalue()).decode()}
+        audio_b64 = base64.b64encode(buffer.getvalue()).decode()
+        return {"audio_b64": audio_b64, "message": f"Generated audio for text: {text}"}
     except Exception as e:
         raise HTTPException(500, str(e))
 
