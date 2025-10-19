@@ -18,18 +18,19 @@ app = FastAPI(title="🎨🎬🔊 Unified AI Suite")
 models = {"image": None, "video": None}
 device = "cpu"
 
-@app.on_event("startup")
-async def preload_audio():
-    """Audio loads fast - preload immediately"""
-    preload_models()
-    print("✅ Audio models preloaded")
+# Remove preload_audio from startup
+# @app.on_event("startup")
+# async def preload_audio():
+#     """Audio loads fast - preload immediately"""
+#     preload_models()
+#     print("✅ Audio models preloaded")
 
 @app.post("/generate/image")
 async def generate_image(prompt: str, steps: int = 20, width: int = 1024, height: int = 1024):
     if models["image"] is None:
         models["image"] = DiffusionPipeline.from_pretrained(
             "stabilityai/stable-diffusion-3.5-large", 
-            torch_dtype=torch.float16
+            torch_dtype=torch.float32  # Changed to float32 for CPU
         ).to(device)
         print("✅ Image model loaded")
     
@@ -52,7 +53,7 @@ async def generate_video(prompt: str, steps: int = 25):
                 models["video"] = pipeline(
                     "text-to-video-synthesis", 
                     model="Wan-AI/Wan2.2-TI2V-5B", 
-                    model_revision="bf16",
+                    model_revision="bf16",  # Keep bf16, but monitor CPU performance
                     cache_dir="/app/model_cache"
                 )
                 print("✅ Video model loaded!")
@@ -72,6 +73,10 @@ async def generate_video(prompt: str, steps: int = 25):
 
 @app.post("/generate/audio")
 async def generate_audio(text: str):
+    # Load models only when needed
+    preload_models()
+    print("✅ Audio models preloaded")
+    
     try:
         audio_array = generate_audio(text)
         buffer = io.BytesIO()
