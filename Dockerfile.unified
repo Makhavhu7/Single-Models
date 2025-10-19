@@ -9,6 +9,9 @@ RUN echo 'tzdata tzdata/Areas select Etc' | debconf-set-selections && \
     python3-pip git libsndfile1 ffmpeg build-essential rustc cargo && \
     rm -rf /var/lib/apt/lists/*
 
+# ✅ Create appuser
+RUN useradd -m appuser
+
 # ✅ PyTorch CPU (shared)
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install --no-cache-dir \
@@ -35,5 +38,6 @@ ENV PYTHONUNBUFFERED=1 \
     TRANSFORMERS_CACHE=/app/model_cache \
     MODELSCOPE_CACHE=/app/model_cache
 
+# Switch to appuser
 USER appuser
 CMD ["python3", "-u", "main.py"]
