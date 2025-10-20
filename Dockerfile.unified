@@ -32,11 +32,12 @@ RUN mkdir -p /app/model_cache && chmod 777 /app/model_cache
 # ✅ CLEANUP (save 300MB!)
 RUN apt-get purge -y build-essential rustc cargo && apt-get autoremove -y
 
-# ✅ ENV (20GB cache)
+# ✅ ENV (20GB cache) + Add HF_TOKEN
 ENV PYTHONUNBUFFERED=1 \
     HUGGINGFACE_HUB_CACHE=/app/model_cache \
     TRANSFORMERS_CACHE=/app/model_cache \
-    MODELSCOPE_CACHE=/app/model_cache
+    MODELSCOPE_CACHE=/app/model_cache \
+    HF_TOKEN=${HF_TOKEN}
 
 # Switch to appuser
 USER appuser
