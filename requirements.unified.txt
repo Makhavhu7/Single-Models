@@ -1,8 +1,8 @@
-# 🎯 CORE + SHARED
 fastapi==0.104.1
 uvicorn==0.24.0
-torch==2.0.1+cpu
-torchvision==0.15.2+cpu
+torch==2.5.1+cu121  # Updated to CUDA 12.1 version
+torchvision==0.20.1+cu121  # Updated to match torch
+torchaudio==2.5.1+cu121  # Updated to match torch
 numpy<2.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
