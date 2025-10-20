@@ -6,17 +6,17 @@ RUN echo 'tzdata tzdata/Areas select Etc' | debconf-set-selections && \
     echo 'tzdata tzdata/Zones/Etc select UTC' | debconf-set-selections && \
     DEBIAN_FRONTEND=noninteractive apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    python3-pip git libsndfile1 ffmpeg build-essential rustc cargo && \
-    rm -rf /var/lib/apt/lists/*
+    python3-pip git libsndfile1 ffmpeg build-essential rustc cargo \
+    nvidia-driver-535 nvidia-utils-535  # Add NVIDIA drivers for GPU support \
+    && rm -rf /var/lib/apt/lists/*
 
 # ✅ Create appuser
 RUN useradd -m appuser
 
-# ✅ PyTorch CPU (shared)
+# ✅ PyTorch with CUDA support (for RTX 4090)
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install --no-cache-dir \
-    torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.2+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121  # CUDA 12.1 for RTX 4090
 
 WORKDIR /app
 
@@ -32,12 +32,14 @@ RUN mkdir -p /app/model_cache && chmod 777 /app/model_cache
 # ✅ CLEANUP (save 300MB!)
 RUN apt-get purge -y build-essential rustc cargo && apt-get autoremove -y
 
-# ✅ ENV (20GB cache) + Add HF_TOKEN
+# ✅ ENV (20GB cache) + Add HF_TOKEN and port
 ENV PYTHONUNBUFFERED=1 \
     HUGGINGFACE_HUB_CACHE=/app/model_cache \
     TRANSFORMERS_CACHE=/app/model_cache \
     MODELSCOPE_CACHE=/app/model_cache \
-    HF_TOKEN=${HF_TOKEN}
+    HF_TOKEN=${HF_TOKEN} \
+    PORT=8080  
+# Match FastAPI and Runpod port
 
 # Switch to appuser
 USER appuser

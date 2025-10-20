@@ -18,15 +18,15 @@ app = FastAPI(title="🎨🎬🔊 Unified AI Suite")
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for testing; restrict in production
+    allow_origins=["*"],  # Restrict in production
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 🌟 GLOBAL MODELS (lazy load)
 models = {"image": None, "video": None}
-device = "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"  # Use GPU if available
 
 # Add root route
 @app.get("/")
@@ -37,8 +37,8 @@ async def root():
 async def generate_image(prompt: str, steps: int = 20, width: int = 1024, height: int = 1024):
     if models["image"] is None:
         models["image"] = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-3.5-large", 
-            torch_dtype=torch.float32
+            "stabilityai/stable-diffusion-3.5-large",
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32
         ).to(device)
         print("✅ Image model loaded")
     
@@ -60,8 +60,8 @@ async def generate_video(prompt: str, steps: int = 25):
             try:
                 print(f"🚀 Loading video model attempt {attempt + 1}")
                 models["video"] = pipeline(
-                    "text-to-video-synthesis", 
-                    model="Wan-AI/Wan2.2-TI2V-5B", 
+                    "text-to-video-synthesis",
+                    model="Wan-AI/Wan2.2-TI2V-5B",
                     model_revision="bf16",
                     cache_dir="/app/model_cache"
                 )
@@ -99,6 +99,6 @@ async def generate_audio(text: str):
 async def health():
     return {"status": "🚀 Unified AI Suite LIVE", "services": ["image", "video", "audio"]}
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)  # Changed to 8080 to match Runpod default
