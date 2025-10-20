@@ -30,26 +30,28 @@ models = {"image": None, "video": None}
 pre_generated = {"image_b64": None, "video_frame_b64": None, "audio_b64": None}
 device = "cpu"
 
-# Login with token from environment variable
+# Optional: Login with token if set (for future gated models)
 hf_token = os.getenv("HF_TOKEN")
 if hf_token:
     login(token=hf_token)
     print("✅ Logged in to Hugging Face with token")
-else:
-    print("⚠️ HF_TOKEN not found in environment. Some models may fail to load.")
 
 @app.on_event("startup")
 async def startup_event():
     """Auto-generate samples on startup"""
-    # Load image model and generate sample
+    # Load image model and generate sample (using non-gated model)
     try:
         models["image"] = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-3.5-large",
-            torch_dtype=torch.float32,
-            use_auth_token=hf_token if hf_token else True  # Use token or prompt for login
+            "runwayml/stable-diffusion-v1-5",  # Non-gated, CPU-compatible model
+            torch_dtype=torch.float32
         ).to(device)
         print("✅ Image model loaded")
-        image = models["image"]("a sample landscape", num_inference_steps=10, width=256, height=256).images[0]
+        image = models["image"](
+            "a sample landscape", 
+            num_inference_steps=10, 
+            width=256, 
+            height=256
+        ).images[0]
         buffered = io.BytesIO()
         image.save(buffered, format="PNG")
         pre_generated["image_b64"] = base64.b64encode(buffered.getvalue()).decode()
@@ -113,18 +115,22 @@ async def auto_generate():
     }
 
 @app.post("/generate/image")
-async def generate_image(prompt: str, steps: int = 20, width: int = 1024, height: int = 1024):
+async def generate_image(prompt: str, steps: int = 20, width: int = 512, height: int = 512):
     if models["image"] is None:
         models["image"] = DiffusionPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-3.5-large",
-            torch_dtype=torch.float32,
-            use_auth_token=hf_token if hf_token else True
+            "runwayml/stable-diffusion-v1-5",
+            torch_dtype=torch.float32
         ).to(device)
         print("✅ Image model loaded")
     
     try:
         pipe = models["image"]
-        image = pipe(prompt, num_inference_steps=steps, width=width, height=height).images[0]
+        image = pipe(
+            prompt, 
+            num_inference_steps=steps, 
+            width=width, 
+            height=height
+        ).images[0]
         buffered = io.BytesIO()
         image.save(buffered, format="PNG")
         img_b64 = base64.b64encode(buffered.getvalue()).decode()
@@ -157,7 +163,7 @@ async def generate_video(prompt: str, steps: int = 25):
         frame = output["videos"][0][0]
         ret, buffer = cv2.imencode('.png', frame)
         video_frame_b64 = base64.b64encode(buffer).decode()
-        return {"video_frame_b64": video_frame_b64, "message": f"Generated video frame for prompt: {prompt}"}
+        return {"video_frame_b64": video_frame_generated, "message": f"Generated video frame for prompt: {prompt}"}
     except Exception as e:
         raise HTTPException(500, str(e))
 
