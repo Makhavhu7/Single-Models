@@ -6,4 +6,4 @@ services:
       - "8080:8080"  # Changed to 8080 to match Runpod and FastAPI
     restart: unless-stopped
     environment:
-      - HF_TOKEN=${HF_TOKEN}  # Ensure token is passed
+      - HF_TOKEN=${HF_TOKEN}  # Ensure token is passedd
