@@ -40,12 +40,12 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: https://api.runpod.io/graphql
+          url: https://api.runpod.io/graphql?api_key=${{ env.RUNPOD_API_KEY }}
           method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "query { me { id email } }"
+              "query": "query { myself { id } }"
             }
         continue-on-error: false
 
@@ -55,19 +55,19 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: https://api.runpod.io/graphql
+          url: https://api.runpod.io/graphql?api_key=${{ env.RUNPOD_API_KEY }}
           method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"test-access\", gpuTypeId: \"NVIDIA GeForce RTX 4090\", imageName: \"nvidia/cuda:11.0-base\", gpuCount: 1, containerDiskInGb: 10, volumeInGb: 0 }) { id status } }"
+              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"test-access\", gpuTypeId: \"NVIDIA GeForce RTX 4090\", imageName: \"nvidia/cuda:11.0-base\", gpuCount: 1, containerDiskInGb: 10, volumeInGb: 0, minVcpuCount: 2, minMemoryInGb: 8 }) { id status } }"
             }
         continue-on-error: true
 
       - name: Log Mutation Test Result (Debug)
         if: steps.test-mutation.outcome == 'failure'
         run: |
-          echo "❌ Mutation test failed - Check API key scopes for GraphQL Write + Pods Create"
+          echo "❌ Mutation test failed - Check API key scopes and response"
           echo "Response: ${{ steps.test-mutation.outputs.response }}"
 
       - name: Create and Start RunPod Pod
@@ -77,12 +77,12 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: https://api.runpod.io/graphql
+          url: https://api.runpod.io/graphql?api_key=${{ env.RUNPOD_API_KEY }}
           method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"sdxl-test-pod-${{ github.run_id }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuTypeId: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, volumeInGb: 0, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status message errors } }"
+              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"sdxl-test-pod-${{ github.run_id }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuTypeId: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, volumeInGb: 0, minVcpuCount: 6, minMemoryInGb: 36, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status message errors } }"
             }
 
       - name: Extract Pod ID
@@ -106,7 +106,7 @@ jobs:
           COUNTER=0
           MAX_WAIT=600
           while [ "$STATUS" != "RUNNING" ] && [ $COUNTER -lt $MAX_WAIT ]; do
-            RESPONSE=$(curl -s -H "Authorization: Bearer $RUNPOD_API_KEY" "https://api.runpod.io/graphql" -d '{"query": "query { pod(id: \"'$POD_ID'\") { status } }"}')
+            RESPONSE=$(curl -s -H "Content-Type: application/json" "https://api.runpod.io/graphql?api_key=$RUNPOD_API_KEY" -d '{"query": "query { pod(input: {id: \"'$POD_ID'\"}) { status } }"}')
             STATUS=$(echo "$RESPONSE" | jq -r '.data.pod.status // "ERROR"')
             echo "Pod status: $STATUS (Attempt $((COUNTER/30 + 1)))"
             if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
@@ -129,8 +129,7 @@ jobs:
           POD_ID: ${{ env.POD_ID }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          RESPONSE=$(curl -X POST "https://api.runpod.io/graphql" \
-            -H "Authorization: Bearer $RUNPOD_API_KEY" \
+          RESPONSE=$(curl -X POST "https://api.runpod.io/graphql?api_key=$RUNPOD_API_KEY" \
             -H "Content-Type: application/json" \
             -d '{
               "query": "mutation { podExec(input: {podId: \"'$POD_ID'\", command: \"cd /app && python src/rp_handler.py --test_input=\\\"{\\\\\\\"input\\\\\\\": {\\\\\\\"prompt\\\\\\\": \\\\\\\"a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed\\\\\\\", \\\\\\\"negative_prompt\\\\\\\": \\\\\\\"blurry, very low quality, deformed, ugly, text, watermark, signature,\\\\\\\", \\\\\\\"height\\\\\\\": 1024, \\\\\\\"width\\\\\\\": 1024, \\\\\\\"num_inference_steps\\\\\\\": 25, \\\\\\\"refiner_inference_steps\\\\\\\": 50, \\\\\\\"guidance_scale\\\\\\\": 7.5, \\\\\\\"strength\\\\\\\": 0.3, \\\\\\\"high_noise_frac\\\\\\\": 0.8, \\\\\\\"seed\\\\\\\": 1337, \\\\\\\"scheduler\\\\\\\": \\\\\\\"K_EULER\\\\\\\", \\\\\\\"num_images\\\\\\\": 1, \\\\\\\"image_url\\\\\\\": null}}\\\"\", env: [{key: \"HF_TOKEN\", value: \"'$HF_TOKEN'\"}]}) { success stdout stderr } }"
@@ -151,10 +150,10 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: https://api.runpod.io/graphql
+          url: https://api.runpod.io/graphql?api_key=${{ env.RUNPOD_API_KEY }}
           method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "mutation { podTerminate(input: {podId: \"${{ env.POD_ID }}\"}) { id status } }"
+              "query": "mutation { podTerminate(input: {id: \"${{ env.POD_ID }}\"}) { id status } }"
             }

@@ -19,12 +19,12 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: https://api.runpod.io/graphql
+          url: https://api.runpod.io/graphql?api_key=${{ env.RUNPOD_API_KEY }}
           method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "query { me { id email } }"
+              "query": "query { myself { id } }"
             }
         continue-on-error: false
 
@@ -34,19 +34,19 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: https://api.runpod.io/graphql
+          url: https://api.runpod.io/graphql?api_key=${{ env.RUNPOD_API_KEY }}
           method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"test-access\", gpuTypeId: \"NVIDIA GeForce RTX 4090\", imageName: \"nvidia/cuda:11.0-base\", gpuCount: 1, containerDiskInGb: 10, volumeInGb: 0 }) { id status } }"
+              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"test-access\", gpuTypeId: \"NVIDIA GeForce RTX 4090\", imageName: \"nvidia/cuda:11.0-base\", gpuCount: 1, containerDiskInGb: 10, volumeInGb: 0, minVcpuCount: 2, minMemoryInGb: 8 }) { id status } }"
             }
         continue-on-error: true
 
       - name: Log Mutation Test Result (Debug)
         if: steps.test-mutation.outcome == 'failure'
         run: |
-          echo "❌ Mutation test failed - Check API key scopes for GraphQL Write + Pods Create"
+          echo "❌ Mutation test failed - Check API key scopes and response"
           echo "Response: ${{ steps.test-mutation.outputs.response }}"
 
       - name: Create and Start RunPod Pod
@@ -56,12 +56,12 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: https://api.runpod.io/graphql
+          url: https://api.runpod.io/graphql?api_key=${{ env.RUNPOD_API_KEY }}
           method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"sdxl-deploy-pod-${{ github.sha }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuTypeId: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, volumeInGb: 0, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status message errors } }"
+              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"sdxl-deploy-pod-${{ github.sha }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuTypeId: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, volumeInGb: 0, minVcpuCount: 6, minMemoryInGb: 36, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status message errors } }"
             }
 
       - name: Extract Pod ID and Public IP
@@ -75,11 +75,10 @@ jobs:
             echo "❌ Pod creation failed: $RESPONSE"
             exit 1
           fi
-          HOST_ID=$(echo "$RESPONSE" | jq -r '.data.podFindAndDeployOnDemand.hostId // empty')
-          if [ -n "$HOST_ID" ]; then
-            PUBLIC_IP=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" "https://api.runpod.io/api/v2/host/$HOST_ID" | jq -r '.ip // empty')
-            echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
-          fi
+          # Get public IP from pod details (uses ports query)
+          PORTS_RESPONSE=$(curl -s -H "Content-Type: application/json" "https://api.runpod.io/graphql?api_key=${{ secrets.RUNPOD_API_KEY }}" -d '{"query": "query { pod(input: {id: \"'$POD_ID'\"}) { runtime { ports { ip isIpPublic publicPort } } } }"}')
+          PUBLIC_IP=$(echo "$PORTS_RESPONSE" | jq -r '.data.pod.runtime.ports[]? | select(.isIpPublic == true) .ip // empty')
+          echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
 
       - name: Wait for Pod to Start
         if: env.POD_ID != ''
@@ -90,7 +89,7 @@ jobs:
           COUNTER=0
           MAX_WAIT=600
           while [ "$STATUS" != "RUNNING" ] && [ $COUNTER -lt $MAX_WAIT ]; do
-            RESPONSE=$(curl -s -H "Authorization: Bearer $RUNPOD_API_KEY" "https://api.runpod.io/graphql" -d '{"query": "query { pod(id: \"'$POD_ID'\") { status } }"}')
+            RESPONSE=$(curl -s -H "Content-Type: application/json" "https://api.runpod.io/graphql?api_key=$RUNPOD_API_KEY" -d '{"query": "query { pod(input: {id: \"'$POD_ID'\"}) { status } }"}')
             STATUS=$(echo "$RESPONSE" | jq -r '.data.pod.status // "ERROR"')
             echo "Pod status: $STATUS (Attempt $((COUNTER/30 + 1)))"
             if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
