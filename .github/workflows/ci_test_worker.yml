@@ -15,6 +15,25 @@ jobs:
     outputs:
       id: ${{ steps.extract_id.outputs.runpod_job_id }}
     steps:
+      - name: Validate Environment Variables
+        run: |
+          if [ -z "${{ vars.RUNNER_24GB }}" ]; then
+            echo "Error: RUNNER_24GB variable is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.RUNPOD_API_KEY }}" ]; then
+            echo "Error: RUNPOD_API_KEY secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.GH_PAT }}" ]; then
+            echo "Error: GH_PAT secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ vars.GH_ORG }}" ]; then
+            echo "Error: GH_ORG variable is not set"
+            exit 1
+          fi
+          echo "RUNNER_24GB: ${{ vars.RUNNER_24GB }}"
       - name: Deploy Worker
         id: deploy
         uses: fjogeleit/http-request-action@v1
@@ -24,20 +43,26 @@ jobs:
           customHeaders: '{"Content-Type": "application/json"}'
           bearerToken: ${{ secrets.RUNPOD_API_KEY }}
           data: '{"input":{"github_pat": "${{ secrets.GH_PAT }}", "github_org":"${{ vars.GH_ORG }}"}}'
+      - name: Debug API Response
+        run: |
+          echo "API Response: ${{ steps.deploy.outputs.response }}"
+          echo "API Status: ${{ steps.deploy.outputs.status }}"
       - name: Extract Job ID
         id: extract_id
         run: |
           RESPONSE='${{ steps.deploy.outputs.response }}'
-          if [ -z "$RESPONSE" ]; then
-            echo "Error: No response from RunPod API"
+          STATUS='${{ steps.deploy.outputs.status }}'
+          if [ "$STATUS" != "200" ]; then
+            echo "Error: RunPod API returned status $STATUS: $RESPONSE"
             exit 1
           fi
           ID=$(echo "$RESPONSE" | jq -r '.id')
           if [ "$ID" = "null" ] || [ -z "$ID" ]; then
-            echo "Error: Failed to extract RunPod job ID"
+            echo "Error: Failed to extract RunPod job ID from response: $RESPONSE"
             exit 1
           fi
           echo "runpod_job_id=$ID" >> $GITHUB_OUTPUT
+          echo "Extracted Job ID: $ID"
 
   run_tests:
     needs: initialize_worker
