@@ -39,9 +39,9 @@ jobs:
           customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
           data: |
             {
-              "query": "mutation { podFindAndDeployOnDemand(input: {name: \"test-access\", gpuIds: \"NVIDIA GeForce RTX 4090\", imageName: \"nvidia/cuda:11.0-base\", gpuCount: 1, containerDiskInGb: 10}) { id status } }"
+              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"test-access\", gpuTypeId: \"NVIDIA GeForce RTX 4090\", imageName: \"nvidia/cuda:11.0-base\", gpuCount: 1, containerDiskInGb: 10, volumeInGb: 0 }) { id status } }"
             }
-        continue-on-error: true  # Allow partial failure for logging
+        continue-on-error: true
 
       - name: Log Mutation Test Result (Debug)
         if: steps.test-mutation.outcome == 'failure'
@@ -51,7 +51,7 @@ jobs:
 
       - name: Create and Start RunPod Pod
         id: pod
-        if: steps.test-mutation.outcome == 'success'  # Only proceed if mutation access works
+        if: steps.test-mutation.outcome == 'success'
         uses: fjogeleit/http-request-action@v1
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
@@ -61,9 +61,8 @@ jobs:
           customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
           data: |
             {
-              "query": "mutation { podFindAndDeployOnDemand(input: {name: \"sdxl-deploy-pod-${{ github.sha }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuIds: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status message } }"
+              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"sdxl-deploy-pod-${{ github.sha }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuTypeId: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, volumeInGb: 0, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status message errors } }"
             }
-        continue-on-error: false
 
       - name: Extract Pod ID and Public IP
         id: extract
@@ -71,8 +70,12 @@ jobs:
         run: |
           POD_ID=$(echo '${{ steps.pod.outputs.response }}' | jq -r '.data.podFindAndDeployOnDemand.id')
           echo "POD_ID=$POD_ID" >> $GITHUB_ENV
-          # Get public IP for access (uses REST API for host details)
-          HOST_ID=$(echo '${{ steps.pod.outputs.response }}' | jq -r '.data.podFindAndDeployOnDemand.hostId // empty')
+          RESPONSE=$(echo '${{ steps.pod.outputs.response }}')
+          if [[ "$RESPONSE" == *"errors"* ]]; then
+            echo "❌ Pod creation failed: $RESPONSE"
+            exit 1
+          fi
+          HOST_ID=$(echo "$RESPONSE" | jq -r '.data.podFindAndDeployOnDemand.hostId // empty')
           if [ -n "$HOST_ID" ]; then
             PUBLIC_IP=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" "https://api.runpod.io/api/v2/host/$HOST_ID" | jq -r '.ip // empty')
             echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
@@ -85,7 +88,7 @@ jobs:
           RUNPOD_API_KEY="${{ secrets.RUNPOD_API_KEY }}"
           STATUS="CREATING"
           COUNTER=0
-          MAX_WAIT=600  # 10 min max
+          MAX_WAIT=600
           while [ "$STATUS" != "RUNNING" ] && [ $COUNTER -lt $MAX_WAIT ]; do
             RESPONSE=$(curl -s -H "Authorization: Bearer $RUNPOD_API_KEY" "https://api.runpod.io/graphql" -d '{"query": "query { pod(id: \"'$POD_ID'\") { status } }"}')
             STATUS=$(echo "$RESPONSE" | jq -r '.data.pod.status // "ERROR"')
@@ -108,17 +111,3 @@ jobs:
         run: |
           echo "✅ Deployment complete! Pod ID: ${{ env.POD_ID }}, Public IP: ${{ env.PUBLIC_IP }}:8080"
           echo "Check RunPod dashboard for logs/SSH. Server should be at /health."
-
-      - name: Cleanup on Failure
-        if: failure() && env.POD_ID != ''
-        uses: fjogeleit/http-request-action@v1
-        env:
-          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
-        with:
-          url: https://api.runpod.io/graphql
-          method: POST
-          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
-          data: |
-            {
-              "query": "mutation { podTerminate(input: {podId: \"${{ env.POD_ID }}\"}) { id status } }"
-            }

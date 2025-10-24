@@ -1,9 +1,1 @@
-.git
-*.md
-__pycache__
-.dev/
-*.pyc
-*.log
-model_cache/
-venv/
-.env
+.git .gitignore .github *.md tests/
