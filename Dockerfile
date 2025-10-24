@@ -24,9 +24,26 @@ RUN apt-get update && apt-get install -y \
 RUN python3.11 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
-# Install Python dependencies
+# Install Python dependencies from official PyTorch source
 COPY builder/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+    fastapi==0.104.1 \
+    uvicorn==0.24.0 \
+    numpy<2.0 \
+    Pillow==10.4.0 \
+    opencv-python==4.8.1.78 \
+    diffusers==0.27.2 \
+    transformers==4.44.0 \
+    huggingface_hub==0.24.7 \
+    accelerate==0.33.0 \
+    safetensors==0.4.5 \
+    modelscope==1.11.0 \
+    scipy==1.10.1 \
+    librosa==0.10.1 \
+    soundfile==0.12.1 \
+    git+https://github.com/suno-ai/bark.git \
+    runpod~=1.7.0 \
+    && pip install --no-cache-dir torch==2.5.0+cu121 torchvision==0.20.0+cu121 torchaudio==2.5.0+cu121 -f https://download.pytorch.org/whl/torch_stable.html
 
 # Copy application code
 COPY src/ ./src/
