@@ -13,6 +13,7 @@ import io
 import base64
 from PIL import Image
 from app.validate_prompt import validate_prompt
+from typing import Optional
 
 app = FastAPI(title="AI API SDXL")
 
@@ -44,7 +45,7 @@ class ImageRequest(BaseModel):
     seed: int = 1337
     scheduler: str = "K_EULER"
     num_images: int = 1
-    image_url: str = None
+    image_url: Optional[str] = None  # Made optional with default None
 
 class VideoRequest(BaseModel):
     prompt: str
