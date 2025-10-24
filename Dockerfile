@@ -1,52 +1,62 @@
-# Use NVIDIA CUDA 12.1 base image (matches RTX 4090)
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+# Base image with NVIDIA CUDA support
+FROM nvidia/cuda:12.1.0-base-ubuntu22.04
+
+# Set non-interactive frontend to avoid keyboard layout prompts
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Set working directory
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+COPY sources.list /etc/apt/sources.list
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
     python3-pip \
-    python3-dev \
     git \
+    curl \
+    build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN pip3 install --no-cache-dir --upgrade pip
+# Set up Python environment
+RUN python3.11 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
 
-# Install PyTorch and related packages with CUDA 12.1
-RUN pip3 install --no-cache-dir \
+# Upgrade pip
+RUN pip install --upgrade pip
+
+# Install PyTorch with CUDA 12.1 (matching versions)
+RUN pip install --no-cache-dir \
     torch==2.1.2+cu121 \
     torchvision==0.16.2+cu121 \
     torchaudio==2.1.2+cu121 \
-    -f https://download.pytorch.org/whl/cu121
+    -f https://download.pytorch.org/whl/torch_stable.html
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir \
-    fastapi==0.104.1 \
-    uvicorn==0.24.0 \
-    numpy<2.0 \
-    Pillow==10.4.0 \
-    opencv-python==4.8.1.78 \
-    diffusers==0.27.2 \
-    transformers==4.44.0 \
-    huggingface_hub==0.24.7 \
-    accelerate==0.33.0 \
-    safetensors==0.4.5 \
-    modelscope==1.11.0 \
-    scipy==1.10.1 \
-    librosa==0.10.1 \
-    soundfile==0.12.1 \
-    runpod~=1.7.0
-
-# Install bark from GitHub
-RUN pip3 install --no-cache-dir git+https://github.com/suno-ai/bark.git
+# Install remaining Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY src/ ./src/
+COPY tests/ ./tests/
+COPY config/ ./config/
 
-# Expose port for FastAPI/uvicorn (RunPod default)
-EXPOSE 8000
+# Set environment variables
+ENV HF_HOME=/app/model_cache
+ENV HUGGINGFACE_HUB_CACHE=/app/model_cache
+ENV MODELSCOPE_CACHE=/app/model_cache
 
-# Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Create model cache directory
+RUN mkdir -p /app/model_cache
+
+# Expose port
+EXPOSE 8080
+
+# Run the application
+CMD ["python", "src/main.py"]
