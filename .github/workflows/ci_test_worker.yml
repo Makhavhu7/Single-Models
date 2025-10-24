@@ -19,7 +19,7 @@ jobs:
         id: deploy
         uses: fjogeleit/http-request-action@v1
         with:
-          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/run"
+          url: "https://api.runpod.io/v2/${{ vars.RUNNER_24GB }}/run"
           method: "POST"
           customHeaders: '{"Content-Type": "application/json"}'
           bearerToken: ${{ secrets.RUNPOD_API_KEY }}
@@ -27,8 +27,17 @@ jobs:
       - name: Extract Job ID
         id: extract_id
         run: |
-          ID=$(echo '${{ steps.deploy.outputs.response }}' | jq -r '.id')
-          echo "::set-output name=runpod_job_id::$ID"
+          RESPONSE='${{ steps.deploy.outputs.response }}'
+          if [ -z "$RESPONSE" ]; then
+            echo "Error: No response from RunPod API"
+            exit 1
+          fi
+          ID=$(echo "$RESPONSE" | jq -r '.id')
+          if [ "$ID" = "null" ] || [ -z "$ID" ]; then
+            echo "Error: Failed to extract RunPod job ID"
+            exit 1
+          fi
+          echo "runpod_job_id=$ID" >> $GITHUB_OUTPUT
 
   run_tests:
     needs: initialize_worker
@@ -48,17 +57,28 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          python src/rp_handler.py --test_input='{"input": {"prompt": "a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed", "type": "image"}}'
+          python src/rp_handler.py --test_input='{"input": {"type": "image", "prompt": "a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed", "steps": 25, "width": 1024, "height": 1024}}'
 
   terminate_worker:
-    if: ${{ always() && !success() }}
+    if: ${{ always() }}
     needs: initialize_worker
     runs-on: ubuntu-latest
     steps:
       - name: Shutdown Worker
+        id: shutdown
+        continue-on-error: true
         uses: fjogeleit/http-request-action@v1
         with:
-          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/cancel/${{ needs.initialize_worker.outputs.id }}"
+          url: "https://api.runpod.io/v2/${{ vars.RUNNER_24GB }}/cancel/${{ needs.initialize_worker.outputs.id }}"
           method: "POST"
           customHeaders: '{"Content-Type": "application/json"}'
           bearerToken: ${{ secrets.RUNPOD_API_KEY }}
+      - name: Check Shutdown Response
+        run: |
+          RESPONSE='${{ steps.shutdown.outputs.response }}'
+          STATUS='${{ steps.shutdown.outputs.status }}'
+          if [ "$STATUS" != "200" ]; then
+            echo "Warning: Failed to terminate RunPod worker (Status: $STATUS, Response: $RESPONSE)"
+          else
+            echo "RunPod worker terminated successfully"
+          fi
