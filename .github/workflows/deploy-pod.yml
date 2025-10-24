@@ -75,7 +75,7 @@ jobs:
             echo "❌ Pod creation failed: $RESPONSE"
             exit 1
           fi
-          # Get public IP from pod details (uses ports query)
+          # Get public IP from pod details
           PORTS_RESPONSE=$(curl -s -H "Content-Type: application/json" "https://api.runpod.io/graphql?api_key=${{ secrets.RUNPOD_API_KEY }}" -d '{"query": "query { pod(input: {id: \"'$POD_ID'\"}) { runtime { ports { ip isIpPublic publicPort } } } }"}')
           PUBLIC_IP=$(echo "$PORTS_RESPONSE" | jq -r '.data.pod.runtime.ports[]? | select(.isIpPublic == true) .ip // empty')
           echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV

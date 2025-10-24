@@ -4,7 +4,7 @@ numpy<2.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
 diffusers==0.27.2
-transformers==0.44.0
+transformers==4.35.0
 huggingface_hub==0.24.7
 accelerate==0.33.0
 safetensors==0.4.5

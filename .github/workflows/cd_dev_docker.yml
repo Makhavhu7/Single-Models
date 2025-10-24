@@ -42,5 +42,3 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: dorfnew/ai-api-sdxl:${{ env.DOCKER_TAG }}
-          build-args: |
-            HF_TOKEN=${{ secrets.HF_TOKEN }}

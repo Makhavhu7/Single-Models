@@ -43,7 +43,6 @@ COPY src/ /app/src/
 ENV HF_HOME=/app/model_cache
 ENV HUGGINGFACE_HUB_CACHE=/app/model_cache
 ENV MODELSCOPE_CACHE=/app/model_cache
-ENV HF_TOKEN=${HF_TOKEN}
 
 # Expose FastAPI port
 EXPOSE 8080
