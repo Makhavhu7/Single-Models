@@ -1,8 +1,8 @@
 fastapi==0.104.1
 uvicorn==0.24.0
-torch==2.5.1+cu121
-torchvision==0.20.1+cu121
-torchaudio==2.5.1+cu121
+# torch==2.5.1+cu121  # Replaced with separate install in Dockerfile
+torchvision==0.20.1+cu121  # Adjust to match torch version
+torchaudio==2.5.1+cu121  # Adjust to match torch version
 numpy<2.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
