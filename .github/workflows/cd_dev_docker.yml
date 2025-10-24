@@ -39,6 +39,6 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64
           push: true
-          tags: dorfnew/unified-ai-suite:${{ env.DOCKER_TAG }}
+          tags: dorfnew/ai-api-sdxl:${{ env.DOCKER_TAG }}
           build-args: |
             HF_TOKEN=${{ secrets.HF_TOKEN }}
