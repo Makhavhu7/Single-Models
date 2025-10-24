@@ -27,7 +27,7 @@ ENV PATH="/app/venv/bin:$PATH"
 # Install Python dependencies from official PyTorch source
 COPY builder/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir torch==2.5.0+cu121 torchvision==0.20.0+cu121 torchaudio==2.5.0+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+    && pip install --no-cache-dir torch==2.2.1+cu121 torchvision==0.17.1+cu121 torchaudio==2.2.1+cu121 -f https://download.pytorch.org/whl/torch_stable.html
 
 # Copy application code
 COPY src/ ./src/
