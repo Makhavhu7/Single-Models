@@ -10,23 +10,59 @@ on:
   workflow_dispatch:
 
 jobs:
-  build_and_test:
+  initialize_worker:
     runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.extract_id.outputs.runpod_job_id }}
+    steps:
+      - name: Deploy Worker
+        id: deploy
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/run"
+          method: "POST"
+          customHeaders: '{"Content-Type": "application/json"}'
+          bearerToken: ${{ secrets.RUNPOD_API_KEY }}
+          data: '{"input":{"github_pat": "${{ secrets.GH_PAT }}", "github_org":"${{ vars.GH_ORG }}", "hf_token":"${{ secrets.HF_TOKEN }}"}}'
+
+      - name: Extract Job ID
+        id: extract_id
+        run: |
+          ID=$(echo '${{ steps.deploy.outputs.response }}' | jq -r '.id')
+          echo "runpod_job_id=$ID" >> $GITHUB_OUTPUT
+
+  run_tests:
+    needs: initialize_worker
+    runs-on: ubuntu-latest
+    container:
+      image: dorfnew/ai-api-sdxl:dev
+      options: --gpus all
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+
+      - name: Set up Python 3.11 & install dependencies
+        run: |
+          apt-get update
+          apt-get install -y python3.11 python3.11-dev python3-pip ffmpeg libsm6 libxext6
+          python3.11 -m pip install --upgrade pip
+          pip install -r builder/requirements.txt
+
+      - name: Execute Tests
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python src/rp_handler.py --test_input='{"input": {"type": "image", "prompt": "a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed", "negative_prompt": "blurry, very low quality, deformed, ugly, text, watermark, signature,", "height": 1024, "width": 1024, "num_inference_steps": 25, "refiner_inference_steps": 50, "guidance_scale": 7.5, "strength": 0.3, "high_noise_frac": 0.8, "seed": 1337, "scheduler": "K_EULER", "num_images": 1, "image_url": null}}'
+
+  terminate_worker:
+    if: ${{ always() && !success() }}
+    needs: initialize_worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Shutdown Worker
+        uses: fjogeleit/http-request-action@v1
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build Docker image
-        run: |
-          docker build -t dorfnew/ai-api-sdxl:dev .
-      - name: Run tests
-        run: |
-          docker run --rm -e HF_TOKEN=${{ secrets.HF_TOKEN }} -p 8080:8080 dorfnew/ai-api-sdxl:dev &
-          sleep 5  # Give the server time to start
-          docker run --rm -e HF_TOKEN=${{ secrets.HF_TOKEN }} dorfnew/ai-api-sdxl:dev python -c "import src.rp_handler; src.rp_handler.run_tests('{\"input\": {\"type\": \"image\", \"prompt\": \"a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed\", \"negative_prompt\": \"blurry, very low quality, deformed, ugly, text, watermark, signature,\", \"height\": 1024, \"width\": 1024, \"num_inference_steps\": 25, \"refiner_inference_steps\": 50, \"guidance_scale\": 7.5, \"strength\": 0.3, \"high_noise_frac\": 0.8, \"seed\": 1337, \"scheduler\": \"K_EULER\", \"num_images\": 1, \"image_url\": null}}')"
+          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/cancel/${{ needs.initialize_worker.outputs.id }}"
+          method: "POST"
+          customHeaders: '{"Content-Type": "application/json"}'
+          bearerToken: ${{ secrets.RUNPOD_API_KEY }}

@@ -1,12 +1,17 @@
 import json
 import requests
+import os
 
 def run_tests(test_input):
     url = "http://localhost:8080"
     headers = {"Content-Type": "application/json"}
-    
     input_data = json.loads(test_input)["input"]
     endpoint = f"{url}/generate/image"
+    
+    # Ensure HF_TOKEN is set
+    if not os.getenv("HF_TOKEN"):
+        raise Exception("HF_TOKEN environment variable not set")
+    
     response = requests.post(endpoint, json=input_data, headers=headers, timeout=10000)
     
     if response.status_code != 200:
@@ -17,3 +22,5 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         run_tests(sys.argv[1])
+    else:
+        raise Exception("No test input provided")
