@@ -27,4 +27,11 @@ jobs:
           docker build -t dorfnew/ai-api-sdxl:dev .
       - name: Run tests
         run: |
-          docker run --rm -e HF_TOKEN=${{ secrets.HF_TOKEN }} dorfnew/ai-api-sdxl:dev python -c "import src.rp_handler; src.rp_handler.run_tests('{\"input\": {\"type\": \"image\", \"prompt\": \"a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed\", \"negative_prompt\": \"blurry, very low quality, deformed, ugly, text, watermark, signature,\", \"height\": 1024, \"width\": 1024, \"num_inference_steps\": 25, \"refiner_inference_steps\": 50, \"guidance_scale\": 7.5, \"strength\": 0.3, \"high_noise_frac\": 0.8, \"seed\": 1337, \"scheduler\": \"K_EULER\", \"num_images\": 1, \"image_url\": null}}')"
+          # Start the container in the background with port mapping
+          docker run -d --rm -p 8080:8080 -e HF_TOKEN=${{ secrets.HF_TOKEN }} --name test-container dorfnew/ai-api-sdxl:dev
+          # Wait for the server to start (give it a few seconds)
+          sleep 5
+          # Run the test against the running container
+          docker exec test-container python -c "import src.rp_handler; src.rp_handler.run_tests('{\"input\": {\"type\": \"image\", \"prompt\": \"a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed\", \"negative_prompt\": \"blurry, very low quality, deformed, ugly, text, watermark, signature,\", \"height\": 1024, \"width\": 1024, \"num_inference_steps\": 25, \"refiner_inference_steps\": 50, \"guidance_scale\": 7.5, \"strength\": 0.3, \"high_noise_frac\": 0.8, \"seed\": 1337, \"scheduler\": \"K_EULER\", \"num_images\": 1, \"image_url\": null}}')"
+          # Stop and remove the container (already handled by --rm)
+          docker stop test-container
