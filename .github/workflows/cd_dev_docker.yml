@@ -9,6 +9,8 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Clear Space
         run: |
           rm -rf /usr/share/dotnet
@@ -35,8 +37,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: Dockerfile
+          context: .              # Ensure build context is the root
+          file: Dockerfile        # Explicitly specify Dockerfile
           platforms: linux/amd64
           push: true
           tags: dorfnew/ai-api-sdxl:${{ env.DOCKER_TAG }}
