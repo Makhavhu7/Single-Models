@@ -1,0 +1,35 @@
+{
+  "tests": [
+    {
+      "name": "sdxl_image_test",
+      "input": {
+        "type": "image",
+        "prompt": "a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed",
+        "negative_prompt": "blurry, very low quality, deformed, ugly, text, watermark, signature",
+        "height": 1024,
+        "width": 1024,
+        "num_inference_steps": 25,
+        "guidance_scale": 7.5,
+        "seed": 1337
+      },
+      "timeout": 10000
+    },
+    {
+      "name": "video_test",
+      "input": {
+        "type": "video",
+        "prompt": "a futuristic cityscape at night with neon lights",
+        "steps": 25
+      },
+      "timeout": 10000
+    },
+    {
+      "name": "audio_test",
+      "input": {
+        "type": "audio",
+        "text": "Welcome to the Unified AI Suite"
+      },
+      "timeout": 10000
+    }
+  ]
+}

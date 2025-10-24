@@ -1,7 +1,9 @@
 FROM ubuntu:22.04
 
-# ✅ APT SOURCES + BASE
+# Copy APT sources
 COPY sources.list /etc/apt/sources.list
+
+# Install base dependencies
 RUN echo 'tzdata tzdata/Areas select Etc' | debconf-set-selections && \
     echo 'tzdata tzdata/Zones/Etc select UTC' | debconf-set-selections && \
     DEBIAN_FRONTEND=noninteractive apt-get update && \
@@ -10,29 +12,32 @@ RUN echo 'tzdata tzdata/Areas select Etc' | debconf-set-selections && \
     nvidia-driver-535 nvidia-utils-535 && \
     rm -rf /var/lib/apt/lists/*
 
-# ✅ Create appuser
+# Create appuser
 RUN useradd -m appuser
 
-# ✅ PyTorch with CUDA support (for RTX 4090)
+# Install PyTorch with CUDA 12.1
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install --no-cache-dir \
-    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
 
 WORKDIR /app
 
-# ✅ ALL DEPENDENCIES (1 command!)
-COPY requirements.unified.txt .
-RUN python3 -m pip install --no-cache-dir -r requirements.unified.txt
+# Install dependencies
+COPY builder/requirements.txt .
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# ✅ APP FILES
-COPY app/ app/
-COPY main.unified.py main.py
+# Copy application files
+COPY src/ src/
+COPY src/main.py .
+
+# Create model cache
 RUN mkdir -p /app/model_cache && chmod 777 /app/model_cache
 
-# ✅ CLEANUP (save 300MB!)
+# Cleanup
 RUN apt-get purge -y build-essential rustc cargo && apt-get autoremove -y
 
-# ✅ ENV (20GB cache) + Add HF_TOKEN and port (use HF_HOME to avoid deprecation warning)
+# Environment variables
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/app/model_cache \
     HUGGINGFACE_HUB_CACHE=/app/model_cache \
@@ -42,4 +47,5 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Switch to appuser
 USER appuser
+
 CMD ["python3", "-u", "main.py"]

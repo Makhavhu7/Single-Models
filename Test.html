@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Suite Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #1a1a1a; color: #e0e0e0; }
+        .section { margin-bottom: 20px; }
+        textarea, input { width: 100%; max-width: 400px; padding: 5px; margin: 5px 0; }
+        button { padding: 5px 10px; background-color: #4a90e2; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #357abd; }
+        #results { margin-top: 10px; }
+        img, audio { max-width: 100%; }
+    </style>
+</head>
+<body>
+    <h1>AI Suite Test</h1>
+
+    <!-- Health Check -->
+    <div class="section">
+        <h2>Health Check</h2>
+        <button onclick="checkHealth()">Check Health</button>
+        <div id="healthResult"></div>
+    </div>
+
+    <!-- Image Generation -->
+    <div class="section">
+        <h2>Generate Image</h2>
+        <textarea id="imagePrompt" rows="2" placeholder="Enter image prompt (e.g., 'a cute cat')"></textarea>
+        <input type="number" id="imageSteps" value="10" min="1" placeholder="Steps">
+        <input type="number" id="imageWidth" value="512" min="64" placeholder="Width">
+        <input type="number" id="imageHeight" value="512" min="64" placeholder="Height">
+        <button onclick="generateImage()">Generate Image</button>
+        <div id="imageResult"></div>
+    </div>
+
+    <!-- Video Generation -->
+    <div class="section">
+        <h2>Generate Video Frame</h2>
+        <textarea id="videoPrompt" rows="2" placeholder="Enter video prompt (e.g., 'a dancing robot')"></textarea>
+        <input type="number" id="videoSteps" value="10" min="1" placeholder="Steps">
+        <button onclick="generateVideo()">Generate Video Frame</button>
+        <div id="videoResult"></div>
+    </div>
+
+    <!-- Audio Generation -->
+    <div class="section">
+        <h2>Generate Audio</h2>
+        <textarea id="audioText" rows="2" placeholder="Enter text (e.g., 'Hello, this is a test audio.')"></textarea>
+        <button onclick="generateAudio()">Generate Audio</button>
+        <div id="audioResult"></div>
+    </div>
+
+    <script>
+        const baseUrl = "https://hmucuqdjbk8x8p-8000.proxy.runpod.net/";
+
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${baseUrl}/health`);
+                const data = await response.json();
+                document.getElementById("healthResult").innerText = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById("healthResult").innerText = `Error: ${error.message}`;
+            }
+        }
+
+        async function generateImage() {
+            const prompt = document.getElementById("imagePrompt").value;
+            const steps = document.getElementById("imageSteps").value;
+            const width = document.getElementById("imageWidth").value;
+            const height = document.getElementById("imageHeight").value;
+
+            if (!prompt) {
+                document.getElementById("imageResult").innerText = "Please enter a prompt.";
+                return;
+            }
+
+            try {
+                const response = await fetch(`${baseUrl}/generate/image`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt, steps, width, height })
+                });
+                const data = await response.json();
+                if (data.image_b64) {
+                    const img = new Image();
+                    img.src = `data:image/png;base64,${data.image_b64}`;
+                    document.getElementById("imageResult").innerHTML = `<p>${data.message}</p>`;
+                    document.getElementById("imageResult").appendChild(img);
+                } else {
+                    document.getElementById("imageResult").innerText = "No image data received.";
+                }
+            } catch (error) {
+                document.getElementById("imageResult").innerText = `Error: ${error.message}`;
+            }
+        }
+
+        async function generateVideo() {
+            const prompt = document.getElementById("videoPrompt").value;
+            const steps = document.getElementById("videoSteps").value;
+
+            if (!prompt) {
+                document.getElementById("videoResult").innerText = "Please enter a prompt.";
+                return;
+            }
+
+            try {
+                const response = await fetch(`${baseUrl}/generate/video`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt, steps })
+                });
+                const data = await response.json();
+                if (data.video_frame_b64) {
+                    const img = new Image();
+                    img.src = `data:image/png;base64,${data.video_frame_b64}`;
+                    document.getElementById("videoResult").innerHTML = `<p>${data.message}</p>`;
+                    document.getElementById("videoResult").appendChild(img);
+                } else {
+                    document.getElementById("videoResult").innerText = "No video frame data received.";
+                }
+            } catch (error) {
+                document.getElementById("videoResult").innerText = `Error: ${error.message}`;
+            }
+        }
+
+        async function generateAudio() {
+            const text = document.getElementById("audioText").value;
+
+            if (!text) {
+                document.getElementById("audioResult").innerText = "Please enter text.";
+                return;
+            }
+
+            try {
+                const response = await fetch(`${baseUrl}/generate/audio`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text })
+                });
+                const data = await response.json();
+                if (data.audio_b64) {
+                    const audio = new Audio(`data:audio/wav;base64,${data.audio_b64}`);
+                    document.getElementById("audioResult").innerHTML = `<p>${data.message}</p>`;
+                    document.getElementById("audioResult").appendChild(audio);
+                    audio.play();
+                } else {
+                    document.getElementById("audioResult").innerText = "No audio data received.";
+                }
+            } catch (error) {
+                document.getElementById("audioResult").innerText = `Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

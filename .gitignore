@@ -1,0 +1,7 @@
+.git
+*.md
+__pycache__
+.dev/
+*.pyc
+*.log
+model_cache/
