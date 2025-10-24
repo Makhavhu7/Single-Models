@@ -1,57 +1,52 @@
-# Base image with NVIDIA CUDA support
-FROM nvidia/cuda:12.1.0-base-ubuntu22.04
-
-# Set non-interactive frontend to avoid keyboard layout prompts
-ENV DEBIAN_FRONTEND=noninteractive
+# Use NVIDIA CUDA 12.1 base image (matches RTX 4090)
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
 # Set working directory
 WORKDIR /app
 
 # Install system dependencies
-COPY sources.list /etc/apt/sources.list
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-dev \
-    python3.11-venv \
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-dev \
     git \
-    curl \
-    build-essential \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    nvidia-driver-535 \
-    nvidia-utils-535 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up Python environment
-RUN python3.11 -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
+# Upgrade pip
+RUN pip3 install --no-cache-dir --upgrade pip
 
-# Install PyTorch with CUDA 12.1
-RUN pip install --no-cache-dir \
+# Install PyTorch and related packages with CUDA 12.1
+RUN pip3 install --no-cache-dir \
     torch==2.1.2+cu121 \
     torchvision==0.16.2+cu121 \
-    torchaudio==0.14.2+cu121 \
-    -f https://download.pytorch.org/whl/torch_stable.html
+    torchaudio==2.1.2+cu121 \
+    -f https://download.pytorch.org/whl/cu121
 
-# Install remaining Python dependencies
-COPY builder/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+RUN pip3 install --no-cache-dir \
+    fastapi==0.104.1 \
+    uvicorn==0.24.0 \
+    numpy<2.0 \
+    Pillow==10.4.0 \
+    opencv-python==4.8.1.78 \
+    diffusers==0.27.2 \
+    transformers==4.44.0 \
+    huggingface_hub==0.24.7 \
+    accelerate==0.33.0 \
+    safetensors==0.4.5 \
+    modelscope==1.11.0 \
+    scipy==1.10.1 \
+    librosa==0.10.1 \
+    soundfile==0.12.1 \
+    runpod~=1.7.0
 
-# Copy application code
-COPY src/ ./src/
-COPY tests/ ./tests/
-COPY config/ ./config/
+# Install bark from GitHub
+RUN pip3 install --no-cache-dir git+https://github.com/suno-ai/bark.git
 
-# Set environment variables
-ENV HF_HOME=/app/model_cache
-ENV HUGGINGFACE_HUB_CACHE=/app/model_cache
-ENV MODELSCOPE_CACHE=/app/model_cache
+# Copy your application code (adjust as needed)
+COPY . .
 
-# Expose port
-EXPOSE 8080
+# Expose port for FastAPI/uvicorn (RunPod default)
+EXPOSE 8000
 
-# Run the application
-CMD ["python", "src/main.py"]
+# Command to run your application (modify based on your app)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
