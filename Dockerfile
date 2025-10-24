@@ -42,11 +42,11 @@ RUN pip3 install --no-cache-dir \
 # Install bark from GitHub
 RUN pip3 install --no-cache-dir git+https://github.com/suno-ai/bark.git
 
-# Copy your application code (adjust as needed)
+# Copy application code
 COPY . .
 
 # Expose port for FastAPI/uvicorn (RunPod default)
 EXPOSE 8000
 
-# Command to run your application (modify based on your app)
+# Command to run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
