@@ -1,7 +1,5 @@
 import os
 import time
-import json
-import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -82,34 +80,28 @@ async def generate_image(request: ImageRequest):
         pipe = models["image"]
         
         # Generate image
-        with torch.autocast(device_type=device if device == "cuda" else "cpu"):
-            image = pipe(
-                prompt=prompt,
-                negative_prompt=request.negative_prompt,
-                height=request.height,
-                width=request.width,
-                num_inference_steps=request.num_inference_steps,
-                guidance_scale=request.guidance_scale,
-                strength=request.strength,
-                high_noise_frac=request.high_noise_frac,
-                generator=torch.Generator(device=device).manual_seed(request.seed) if request.seed else None,
-                num_images_per_prompt=request.num_images
-            ).images[0]
+        image = pipe(
+            prompt,
+            negative_prompt=request.negative_prompt,
+            height=request.height,
+            width=request.width,
+            num_inference_steps=request.num_inference_steps,
+            guidance_scale=request.guidance_scale,
+            strength=request.strength,
+            high_noise_frac=request.high_noise_frac,
+            generator=torch.Generator(device=device).manual_seed(request.seed),
+            scheduler=request.scheduler
+        ).images[0]
         
-        # Convert to base64
         buffered = io.BytesIO()
         image.save(buffered, format="PNG")
         img_b64 = base64.b64encode(buffered.getvalue()).decode()
         
-        return {
-            "image_b64": img_b64, 
-            "message": f"Generated image for prompt: {prompt}",
-            "dimensions": f"{request.width}x{request.height}"
-        }
+        return {"image_b64": img_b64, "message": f"Generated image for prompt: {prompt}"}
         
     except Exception as e:
         print(f"❌ Error generating image: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 @app.post("/generate/video")
 async def generate_video(request: VideoRequest):
@@ -124,33 +116,28 @@ async def generate_video(request: VideoRequest):
                 try:
                     models["video"] = pipeline(
                         "text-to-video-synthesis",
-                        model="damo-vilab/text-to-video-ms-1.7b",  # Using a more stable model
+                        model="Wan-AI/Wan2.2-TI2V-5B",
+                        model_revision="bf16",
                         cache_dir="/app/model_cache"
                     )
                     print("✅ Video model loaded!")
                     break
                 except Exception as e:
                     if attempt == max_retries - 1:
-                        raise HTTPException(status_code=500, detail=f"Video model failed to load: {e}")
-                    print(f"⚠️  Video model load attempt {attempt + 1} failed, retrying...")
+                        raise HTTPException(500, f"Video model failed: {e}")
+                    print(f"⚠️ Video model load attempt {attempt + 1} failed, retrying...")
                     time.sleep(5)
         
-        # Generate video frames
         output = models["video"]({"text": prompt, "num_inference_steps": request.steps})
         frame = output["videos"][0][0]
-        
-        # Convert frame to base64
         ret, buffer = cv2.imencode('.png', frame)
         video_frame_b64 = base64.b64encode(buffer).decode()
         
-        return {
-            "video_frame_b64": video_frame_b64, 
-            "message": f"Generated video frame for prompt: {prompt}"
-        }
+        return {"video_frame_b64": video_frame_b64, "message": f"Generated video frame for prompt: {prompt}"}
         
     except Exception as e:
         print(f"❌ Error generating video: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 @app.post("/generate/audio")
 async def generate_audio_endpoint(request: AudioRequest):
@@ -164,23 +151,16 @@ async def generate_audio_endpoint(request: AudioRequest):
             print("✅ Audio models preloaded")
             models["audio"] = True
         
-        # Generate audio
         audio_array = generate_audio(text)
-        
-        # Convert to base64
         buffer = io.BytesIO()
         write_wav(buffer, SAMPLE_RATE, audio_array)
         audio_b64 = base64.b64encode(buffer.getvalue()).decode()
         
-        return {
-            "audio_b64": audio_b64, 
-            "message": f"Generated audio for text: {text}",
-            "sample_rate": SAMPLE_RATE
-        }
+        return {"audio_b64": audio_b64, "message": f"Generated audio for text: {text}"}
         
     except Exception as e:
         print(f"❌ Error generating audio: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 @app.get("/health")
 async def health():
@@ -196,47 +176,6 @@ async def health():
         "models": model_status,
         "services": ["image", "video", "audio"]
     }
-
-@app.get("/models/status")
-async def models_status():
-    return {
-        "image": bool(models["image"]),
-        "video": bool(models["video"]),
-        "audio": bool(models["audio"])
-    }
-
-@app.post("/models/load/{model_type}")
-async def load_model(model_type: str):
-    try:
-        if model_type == "image" and models["image"] is None:
-            print("Loading image model on demand...")
-            models["image"] = DiffusionPipeline.from_pretrained(
-                "stabilityai/stable-diffusion-3.5-large",
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                cache_dir="/app/model_cache"
-            ).to(device)
-            return {"message": "Image model loaded successfully"}
-            
-        elif model_type == "video" and models["video"] is None:
-            print("Loading video model on demand...")
-            models["video"] = pipeline(
-                "text-to-video-synthesis",
-                model="damo-vilab/text-to-video-ms-1.7b",
-                cache_dir="/app/model_cache"
-            )
-            return {"message": "Video model loaded successfully"}
-            
-        elif model_type == "audio" and models["audio"] is None:
-            print("Loading audio models on demand...")
-            preload_models()
-            models["audio"] = True
-            return {"message": "Audio models loaded successfully"}
-            
-        else:
-            return {"message": f"Model {model_type} is already loaded or invalid type"}
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -8,7 +8,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 # Install system dependencies
-COPY sources.list /etc/apt/sources.list
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-dev \
@@ -31,7 +30,7 @@ ENV PATH="/app/venv/bin:$PATH"
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Install PyTorch with CUDA 12.1 (matching versions)
+# Install PyTorch with CUDA 12.1
 RUN pip install --no-cache-dir \
     torch==2.1.2+cu121 \
     torchvision==0.16.2+cu121 \
@@ -44,8 +43,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
-COPY tests/ ./tests/
-COPY config/ ./config/
 
 # Set environment variables
 ENV HF_HOME=/app/model_cache
