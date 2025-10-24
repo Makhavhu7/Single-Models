@@ -30,7 +30,11 @@ RUN python3.11 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # Install PyTorch with CUDA 12.1
-RUN pip install --no-cache-dir torch==2.4.1+cu121 torchvision==0.17.1+cu121 torchaudio==2.4.1+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+RUN pip install --no-cache-dir \
+    torch==2.1.2+cu121 \
+    torchvision==0.16.2+cu121 \
+    torchaudio==0.14.2+cu121 \
+    -f https://download.pytorch.org/whl/torch_stable.html
 
 # Install remaining Python dependencies
 COPY builder/requirements.txt .
@@ -42,8 +46,6 @@ COPY tests/ ./tests/
 COPY config/ ./config/
 
 # Set environment variables
-ARG HF_TOKEN
-ENV HF_TOKEN=$HF_TOKEN
 ENV HF_HOME=/app/model_cache
 ENV HUGGINGFACE_HUB_CACHE=/app/model_cache
 ENV MODELSCOPE_CACHE=/app/model_cache
