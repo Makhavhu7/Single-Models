@@ -82,7 +82,7 @@ jobs:
           customHeaders: '{"Content-Type": "application/json"}'
           data: |
             {
-              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"sdxl-test-pod-${{ github.run_id }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuTypeId: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, volumeInGb: 0, minVcpuCount: 6, minMemoryInGb: 36, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id message errors } }"
+              "query": "mutation { podFindAndDeployOnDemand(input: { cloudType: SECURE, name: \"sdxl-test-pod-${{ github.run_id }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuTypeId: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, volumeInGb: 0, minVcpuCount: 6, minMemoryInGb: 36, env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id } }"
             }
 
       - name: Extract Pod ID
