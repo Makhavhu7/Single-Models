@@ -1,0 +1,59 @@
+name: Deploy to RunPod Pod
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create and Start RunPod Pod
+        id: pod
+        uses: fjogeleit/http-request-action@v1
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        with:
+          url: https://api.runpod.io/graphql
+          method: POST
+          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          data: |
+            {
+              "query": "mutation { podFindAndDeployOnDemand(input: {name: \"sdxl-deploy-pod-${{ github.sha }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuIds: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status } }"
+            }
+
+      - name: Extract Pod ID and Public IP
+        id: extract
+        run: |
+          POD_ID=$(echo '${{ steps.pod.outputs.response }}' | jq -r '.data.podFindAndDeployOnDemand.id')
+          echo "POD_ID=$POD_ID" >> $GITHUB_ENV
+          # Get public IP for access
+          IP=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" "https://api.runpod.io/graphql" -d '{"query": "query { pod(id: \"'$POD_ID'\") { desiredStatus hostId } }"}' | jq -r '.data.pod.hostId')
+          echo "PUBLIC_IP=$(curl -s 'https://api.runpod.io/api/v2/host/$IP' -H 'Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}' | jq -r '.ip')" >> $GITHUB_ENV
+
+      - name: Wait for Pod to Start
+        run: |
+          # Same wait loop as in CI
+          POD_ID=${{ env.POD_ID }}
+          RUNPOD_API_KEY=${{ secrets.RUNPOD_API_KEY }}
+          STATUS="CREATING"
+          while [ "$STATUS" != "RUNNING" ]; do
+            STATUS=$(curl -s -H "Authorization: Bearer $RUNPOD_API_KEY" "https://api.runpod.io/graphql" -d '{"query": "query { pod(id: \"'$POD_ID'\") { status } }"}' | jq -r '.data.pod.status')
+            echo "Pod status: $STATUS"
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "Pod failed to start!"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Pod is running! Access at http://${{ env.PUBLIC_IP }}:8080"
+
+      - name: Output Pod Details
+        run: |
+          echo "Deployment complete! Pod ID: ${{ env.POD_ID }}, Public IP: ${{ env.PUBLIC_IP }}:8080"
+          echo "Check RunPod dashboard for logs/SSH."

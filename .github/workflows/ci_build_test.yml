@@ -10,59 +10,90 @@ on:
   workflow_dispatch:
 
 jobs:
-  initialize_worker:
+  build_and_test:
     runs-on: ubuntu-latest
-    outputs:
-      id: ${{ steps.extract_id.outputs.runpod_job_id }}
-    steps:
-      - name: Deploy Worker
-        id: deploy
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/run"
-          method: "POST"
-          customHeaders: '{"Content-Type": "application/json"}'
-          bearerToken: ${{ secrets.RUNPOD_API_KEY }}
-          data: '{"input":{"github_pat": "${{ secrets.GH_PAT }}", "github_org":"${{ vars.GH_ORG }}", "hf_token":"${{ secrets.HF_TOKEN }}"}}'
-
-      - name: Extract Job ID
-        id: extract_id
-        run: |
-          ID=$(echo '${{ steps.deploy.outputs.response }}' | jq -r '.id')
-          echo "runpod_job_id=$ID" >> $GITHUB_OUTPUT
-
-  run_tests:
-    needs: initialize_worker
-    runs-on: ubuntu-latest
-    container:
-      image: dorfnew/ai-api-sdxl:dev
-      options: --gpus all
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11 & install dependencies
-        run: |
-          apt-get update
-          apt-get install -y python3.11 python3.11-dev python3-pip ffmpeg libsm6 libxext6
-          python3.11 -m pip install --upgrade pip
-          pip install -r builder/requirements.txt
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Execute Tests
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          docker build -t dorfnew/ai-api-sdxl:dev .
+
+      - name: Push Docker image (for main branch)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push dorfnew/ai-api-sdxl:dev
+
+      - name: Create and Start RunPod Pod
+        id: pod
+        uses: fjogeleit/http-request-action@v1
         env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        with:
+          url: https://api.runpod.io/graphql
+          method: POST
+          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          data: |
+            {
+              "query": "mutation { podFindAndDeployOnDemand(input: {name: \"sdxl-test-pod-${{ github.run_id }}\", imageName: \"dorfnew/ai-api-sdxl:dev\", gpuCount: 1, gpuIds: \"NVIDIA GeForce RTX 4090\", containerDiskInGb: 80, ports: [\"8080/http\"], env: [{key: \"HF_TOKEN\", value: \"${{ secrets.HF_TOKEN }}\"}]}) { id status } }"
+            }
+
+      - name: Extract Pod ID
+        id: extract
+        run: |
+          echo "POD_ID=$(echo '${{ steps.pod.outputs.response }}' | jq -r '.data.podFindAndDeployOnDemand.id')" >> $GITHUB_ENV
+
+      - name: Wait for Pod to Start
+        run: |
+          POD_ID=${{ env.POD_ID }}
+          RUNPOD_API_KEY=${{ secrets.RUNPOD_API_KEY }}
+          STATUS="CREATING"
+          while [ "$STATUS" != "RUNNING" ]; do
+            STATUS=$(curl -s -H "Authorization: Bearer $RUNPOD_API_KEY" "https://api.runpod.io/graphql" -d '{"query": "query { pod(id: \"'$POD_ID'\") { status } }"}' | jq -r '.data.pod.status')
+            echo "Pod status: $STATUS"
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "Pod failed to start!"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Pod is running!"
+
+      - name: Run Tests on Pod
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          POD_ID: ${{ env.POD_ID }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          python src/rp_handler.py --test_input='{"input": {"type": "image", "prompt": "a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed", "negative_prompt": "blurry, very low quality, deformed, ugly, text, watermark, signature,", "height": 1024, "width": 1024, "num_inference_steps": 25, "refiner_inference_steps": 50, "guidance_scale": 7.5, "strength": 0.3, "high_noise_frac": 0.8, "seed": 1337, "scheduler": "K_EULER", "num_images": 1, "image_url": null}}'
+          # Exec command to run tests on the pod (assumes your main.py starts the server on boot, and rp_handler is in /app/src)
+          curl -X POST "https://api.runpod.io/graphql" \
+            -H "Authorization: Bearer $RUNPOD_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "query": "mutation { podExec(input: {podId: \"'$POD_ID'\", command: \"cd /app && python src/rp_handler.py --test_input=\\\"{\\\\\\\"input\\\\\\\": {\\\\\\\"prompt\\\\\\\": \\\\\\\"a majestic steampunk dragon soaring through a cloudy sky, intricate clockwork details, golden hour lighting, highly detailed\\\\\\\", \\\\\\\"negative_prompt\\\\\\\": \\\\\\\"blurry, very low quality, deformed, ugly, text, watermark, signature,\\\\\\\", \\\\\\\"height\\\\\\\": 1024, \\\\\\\"width\\\\\\\": 1024, \\\\\\\"num_inference_steps\\\\\\\": 25, \\\\\\\"refiner_inference_steps\\\\\\\": 50, \\\\\\\"guidance_scale\\\\\\\": 7.5, \\\\\\\"strength\\\\\\\": 0.3, \\\\\\\"high_noise_frac\\\\\\\": 0.8, \\\\\\\"seed\\\\\\\": 1337, \\\\\\\\"scheduler\\\\\\\": \\\\\\\"K_EULER\\\\\\\", \\\\\\\"num_images\\\\\\\": 1, \\\\\\\"image_url\\\\\\\": null}}\\\"\", env: [{key: \"HF_TOKEN\", value: \"'$HF_TOKEN'\"}]}) { success stdout stderr } }"
+            '
+          echo "Tests completed on pod."
 
-  terminate_worker:
-    if: ${{ always() && !success() }}
-    needs: initialize_worker
-    runs-on: ubuntu-latest
-    steps:
-      - name: Shutdown Worker
+      - name: Terminate Pod (Cleanup)
+        if: always()
         uses: fjogeleit/http-request-action@v1
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         with:
-          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/cancel/${{ needs.initialize_worker.outputs.id }}"
-          method: "POST"
-          customHeaders: '{"Content-Type": "application/json"}'
-          bearerToken: ${{ secrets.RUNPOD_API_KEY }}
+          url: https://api.runpod.io/graphql
+          method: POST
+          customHeaders: '{"Content-Type": "application/json", "Authorization": "Bearer ${{ env.RUNPOD_API_KEY }}"}'
+          data: |
+            {
+              "query": "mutation { podTerminate(input: {podId: \"${{ env.POD_ID }}\"}) { id status } }"
+            }
